@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 const char *file_input, *file_output;
 SNDFILE *snd_input=NULL, *snd_output=NULL;
 SF_INFO info_in, info_out;
-DenoiseState *st[2];
+DenoiseState **st;
 uint channels=1,ch;
 float *data;
 
@@ -71,6 +71,8 @@ if ((snd_output=sf_open(file_output, SFM_WRITE, &info_out)) == NULL) {
  fprintf(stderr, "Failed to open output file: %s (%s)\n", file_output, sf_strerror (NULL));
  return 1;
 }
+
+st=malloc(channels * sizeof(DenoiseState *));
 
 for (ch=0;ch<channels;ch++) {
  st[ch]=rnnoise_create(NULL);
@@ -113,6 +115,9 @@ while (1) {
 for (ch=0;ch<channels;ch++) {
  rnnoise_destroy(st[ch]);
 }
+
+free(data);
+free(st);
 
 sf_close(snd_input);
 sf_close(snd_output);
