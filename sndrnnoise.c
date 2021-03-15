@@ -33,8 +33,9 @@ int main(int argc, char **argv)
 const char *file_input, *file_output;
 SNDFILE *snd_input=NULL, *snd_output=NULL;
 SF_INFO info_in, info_out;
-DenoiseState *st;
-float data[FRAME_SIZE];
+DenoiseState *st[2];
+uint channels=1,ch;
+float *data;
 
 if (argc!=3) {
  fprintf(stderr, "Usage: %s input.wav output.wav\n", argv[0]);
@@ -44,18 +45,18 @@ if (argc!=3) {
 file_input=argv[1];
 file_output=argv[2];
 
-/* printf("Input: %s\nOutput: %s\n", file_input, file_output);*/
+fprintf(stderr, "Input: %s\nOutput: %s\n", file_input, file_output);
 
 if ((snd_input=sf_open(file_input, SFM_READ, &info_in)) == NULL) {
  fprintf(stderr, "Failed to open input file: %s\n", file_input);
  return 1;
 }
 
-/* XXX: Add support for denoising any amount of channels */
-if (info_in.channels!=1) {
- fprintf(stderr, "Only 1 channel input file supported.\n");
+if (info_in.channels>2) {
+ fprintf(stderr, "Only mono or stereo input file supported.\n");
  return 1;
 }
+channels=info_in.channels;
 
 if (info_in.samplerate!=48000) {
  fprintf(stderr, "Only 48kHz samplerate input file supported.\n");
@@ -67,25 +68,38 @@ memcpy(&info_out, &info_in, sizeof(info_out));
 info_out.format=SF_FORMAT_WAV | SF_FORMAT_PCM_16;
 
 if ((snd_output=sf_open(file_output, SFM_WRITE, &info_out)) == NULL) {
- printf("Failed to open output file: %s (%s)\n", file_output, sf_strerror (NULL));
+ fprintf(stderr, "Failed to open output file: %s (%s)\n", file_output, sf_strerror (NULL));
  return 1;
 }
 
-st=rnnoise_create(NULL);
+for (ch=0;ch<channels;ch++) {
+ st[ch]=rnnoise_create(NULL);
+}
+
+data=malloc(channels * FRAME_SIZE * sizeof(float));
 
 /* Don't normalize to -1.0 - 1.0 */
 sf_command(snd_input, SFC_SET_NORM_FLOAT, NULL, SF_FALSE);
 sf_command(snd_output, SFC_SET_NORM_FLOAT, NULL, SF_FALSE);
 
 while (1) {
- int r, w, frames=FRAME_SIZE;
+ int r, w, frames=FRAME_SIZE, sc;
  float rn;
+ float chd[FRAME_SIZE];
 
  r=sf_readf_float(snd_input, data, frames);
  if (r==0)
    break;
 
- rn=rnnoise_process_frame(st, data, data);
+ for (ch=0;ch<channels;ch++) {
+  for (sc=0;sc<FRAME_SIZE;sc++)
+   chd[sc]=data[sc*channels+ch];
+
+  rn=rnnoise_process_frame(st[ch], chd, chd);
+
+  for (sc=0;sc<FRAME_SIZE;sc++)
+   data[sc*channels+ch]=chd[sc];
+ }
 
  w=sf_writef_float(snd_output, data, r);
  if (w!=r) {
@@ -93,10 +107,12 @@ while (1) {
   break;
  }
 
- /* printf("%d/%d/%f\n", r, w, rn); */
+  fprintf(stderr, "%d/%d/%f\n", r, w, rn);
 }
 
-rnnoise_destroy(st);
+for (ch=0;ch<channels;ch++) {
+ rnnoise_destroy(st[ch]);
+}
 
 sf_close(snd_input);
 sf_close(snd_output);
