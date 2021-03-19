@@ -58,11 +58,12 @@ uint channels=1,ch;
 float *data;
 int split=0,splits=0;
 int sframes=0,nframes=0;
+float cur_sec=0.0, split_sec=0.0, splited_sec=0.0;
 float rn[4]={0.0, 0.0}, prn[4]={0.0, 0.0};
 float silence=0.003;
 
 if (argc<3) {
- fprintf(stderr, "Usage: %s input.wav output.wav\n", argv[0]);
+ fprintf(stderr, "Usage: %s input.wav output.wav [splitframes [minlength]]\n", argv[0]);
  return 1;
 }
 
@@ -74,6 +75,11 @@ fprintf(stderr, "Input: %s\nOutput: %s\n", file_input, file_output);
 if (argc>3) {
  split=atoi(argv[3]);
  fprintf(stderr, "Split on silence frames: %d\n", split);
+}
+
+if (argc>4) {
+ split_sec=atof(argv[4]);
+ fprintf(stderr, "Minimum length: %f seconds\n", split_sec);
 }
 
 if ((snd_input=sf_open(file_input, SFM_READ, &info_in)) == NULL) {
@@ -120,6 +126,9 @@ while (1) {
  if (r==0)
    break;
 
+ cur_sec+=r/48000.0;
+ splited_sec+=r/48000.0;
+
  for (ch=0;ch<channels;ch++) {
   for (sc=0;sc<FRAME_SIZE;sc++)
    chd[sc]=data[sc*channels+ch];
@@ -138,9 +147,9 @@ while (1) {
   nframes++;
  }
 
- // fprintf(stderr, "%d/%d/%d/%f %f\n", r, w, sframes, prn[0], rn[0]);
+ // fprintf(stderr, "%f/%f: %d/%d/%d/%f %f\n", cur_sec, split_sec, r, w, sframes, prn[0], rn[0]);
 
- if (split>0 && sframes>split && nframes>0) {
+ if (split>0 && sframes>split && nframes>0 && splited_sec>split_sec) {
   char *newfile;
   int sn;
 
@@ -151,6 +160,7 @@ while (1) {
 
   newfile=malloc(sn);
 
+  fprintf(stderr, "Spliting at position: %f , segment length %f\n", cur_sec, splited_sec);
   sn=snprintf(newfile, sn, "%s-%08d", file_output, splits);
 
   memcpy(&info_out, &info_in, sizeof(info_out));
@@ -162,6 +172,7 @@ while (1) {
   }
   sframes=0;
   nframes=0;
+  splited_sec=0.0;
 
   free(newfile);
  }
